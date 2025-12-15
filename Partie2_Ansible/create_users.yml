@@ -1,0 +1,112 @@
+---
+# =================================================================
+# INF 3611 - TP 1: Playbook Ansible pour la création d'utilisateurs
+# =================================================================
+- name: Automatisation de la creation d'utilisateurs et notification
+  hosts: vps_serveurs # Cible les serveurs définis dans inventory.ini
+  become: yes # Exécuter les tâches avec élévation de privilèges (sudo)
+  vars:
+    # Définition du groupe principal (comme le paramètre du script Bash)
+    main_group: "students-inf-361"
+    
+    # -------------------------------------------------------------------------
+    # Conversion du users.txt en structure YAML (Liste de Dictionnaires)
+    # L'utilisation de 'lookup' permet de lire des données externes directement.
+    # Dans un contexte réel, on utiliserait un fichier YAML ou JSON dédié.
+    # Structure: username; default_password; full_name; phone; email; preferred_shell
+    user_data:
+      - { username: 'alice_d', password: 'P@sswOrd123', name: 'Alice Dupont', phone: '699000001', email: 'alice.dupont@fsciences.cm', shell: '/bin/zsh' }
+      - { username: 'bob_e', password: 'Azerty567', name: 'Bob Ekwalla', phone: '699000002', email: 'bob.ekwalla@fsciences.cm', shell: '/bin/bash' }
+      - { username: 'charlie_f', password: 'Secret!890', name: 'Charlie Fotsing', phone: '677000003', email: 'charlie.fotsing@fsciences.cm', shell: '/usr/bin/fish' }
+      - { username: 'denis_g', password: 'Qwerty!012', name: 'Denise Goufo', phone: '655000004', email: 'denise.goufo@fsciences.cm', shell: '/usr/bin/ksh' }
+    # -------------------------------------------------------------------------
+
+  tasks:
+
+    # 1. Créer le groupe principal
+    - name: 1. Creation du groupe {{ main_group }}
+      group:
+        name: "{{ main_group }}"
+        state: present
+
+    # 2. Installer les shells préférés (si absents)
+    # Note : Le module 'package' est dynamique (apt/yum/dnf/etc.)
+    - name: 2. S'assurer que les shells preferes sont installes
+      package:
+        name: "{{ item.shell | basename }}" # 'basename' extrait 'zsh' de '/bin/zsh'
+        state: present
+      # Utilisation d'un 'when' pour ne tenter l'installation que si le shell est défini et non /bin/bash (qui est standard)
+      when: item.shell is defined and item.shell != "/bin/bash"
+      loop: "{{ user_data }}"
+    
+    # --- Création et Configuration des Utilisateurs (Boucle) ---
+    - name: 3. Boucle de creation des utilisateurs et configuration
+      loop: "{{ user_data }}"
+      loop_control:
+        loop_var: user
+      block:
+        
+        # a. Création de l'utilisateur
+        - name: "Creation de l'utilisateur {{ user.username }}"
+          user:
+            name: "{{ user.username }}"
+            comment: "{{ user.name }},,{{ user.phone }},{{ user.email }}" # GECOS (Livrable 2b)
+            shell: "{{ user.shell }}"
+            group: "{{ main_group }}" # Groupe principal (Livrable 3)
+            groups: "sudo" # Ajout au groupe sudo (Livrable 6)
+            append: yes
+            # Utilisation du hash SHA512 pour le mot de passe (Livrable 4)
+            password: "{{ user.password | password_hash('sha512') }}" 
+            state: present
+        
+        # b. Forcer le changement de mot de passe (Livrable 5)
+        - name: "Forcer le changement de mot de passe pour {{ user.username }}"
+          command: chage -d 0 "{{ user.username }}"
+        
+        # c. Limitation de l'utilisation de 'su' (Livrable 6)
+        # Ansible utilise souvent des modules spécifiques pour les limites (comme pam_limits)
+        - name: "Restriction de 'su' pour le groupe {{ main_group }} (via /etc/security/access.conf)"
+          lineinfile:
+            path: /etc/security/access.conf
+            line: "-: {{ main_group }}: ALL EXCEPT root"
+            state: present
+            create: yes
+        
+        # d. Limite d'utilisation mémoire (Livrable 9 - 4Go approximatif)
+        - name: "Appliquer la limite de memoire virtuelle (4GB) via limits.conf"
+          lineinfile:
+            path: /etc/security/limits.conf
+            line: "{{ user.username }} hard as 4194304" # 4194304 KiB = 4 GiB
+            state: present
+        
+        # e. Envoi de l'e-mail de notification (Livrable 7)
+        - name: "Envoi de l'email de bienvenue pour {{ user.username }}"
+          mail:
+            host: smtp.votredomaine.com # REMPLACER PAR VOTRE SERVEUR SMTP
+            port: 587
+            username: votre_smtp_user # REMPLACER
+            password: votre_smtp_pass # REMPLACER
+            to: "{{ user.email }}"
+            subject: "INF 3611 - Activation de votre compte utilisateur"
+            body: |
+              Bonjour {{ user.name }},
+
+              Votre compte utilisateur a ete cree sur le serveur du TP.
+
+              --- Informations de connexion ---
+              - Serveur IP : {{ ansible_default_ipv4.address }}
+              - Port SSH : 22 (ou 2222 si change)
+              - Utilisateur : {{ user.username }}
+              - Mot de passe initial : {{ user.password }}
+              
+              ATTENTION : Le mot de passe DOIT etre change a la premiere connexion.
+
+              --- Commandes utiles ---
+              - Connexion SSH : ssh {{ user.username }}@{{ ansible_default_ipv4.address }}
+              - Transmission de cle publique : ssh-copy-id -p <Port_SSH> {{ user.username }}@{{ ansible_default_ipv4.address }}
+
+              Cordialement,
+              L'Administration Systeme (INF 3611)
+          # Utilisation d'un 'when' pour s'assurer que l'e-mail est valide
+          delegate_to: localhost # L'envoi doit se faire depuis la machine de contrôle Ansible
+          run_once: true # Assure que l'envoi ne se répète pas inutilement
