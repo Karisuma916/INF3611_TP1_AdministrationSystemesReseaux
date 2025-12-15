@@ -5,8 +5,8 @@
 
 ##  Étudiant
 
-* **Nom/Prénom :** [VOTRE NOM ET PRÉNOM]
-* **Matricule :** [VOTRE MATRICULE]
+* **Nom/Prénom :** [NJOYA NJOYA YASSIN ARAFAT]
+* **Matricule :** [23U2867]
 
 ---
 
