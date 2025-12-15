@@ -1,0 +1,4 @@
+alice_d;P@sswOrd123;Alice Dupont;699000001;alice.dupont@fsciences.cm;/bin/zsh
+bob_e;Azerty567;Bob Ekwalla;699000002;bob.ekwalla@fsciences.cm;/bin/bash
+charlie_f;Secret!890;Charlie Fotsing;677000003;charlie.fotsing@fsciences.cm;/usr/bin/fish
+denis_g;Qwerty!012;Denise Goufo;655000004;denise.goufo@fsciences.cm;/usr/bin/ksh
